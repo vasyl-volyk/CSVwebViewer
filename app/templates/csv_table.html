@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>CSV: {{ filename }}</title>
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
+    <link rel="stylesheet" href="https://cdn.datatables.net/fixedheader/3.4.0/css/fixedHeader.dataTables.min.css">
+    <style>
+        body {
+            font-family: sans-serif;
+            font-size: 14px;
+            color: #333;
+            margin: 20px;
+        }
+        table.dataTable {
+            font-family: Consolas, "Courier New", Courier, monospace;
+            font-size: 13px;
+            border-collapse: collapse !important;
+            width: 100%;
+        }
+        table.dataTable th, table.dataTable td {
+            border: 1px solid #ccc !important;
+            padding: 4px 8px !important;
+            white-space: nowrap;
+        }
+        table.dataTable thead th {
+            background-color: #333 !important;
+            color: #fff !important;
+        }
+        h1 {
+            font-size: 18px;
+        }
+        .path-nav { 
+            margin-bottom: 15px; 
+            font-size: 1.1em;
+        }
+        .path-nav a { 
+            text-decoration: none; 
+            color: #007bff; 
+        }
+        .path-nav a:hover { 
+            text-decoration: underline; 
+        }
+        .nav-table {
+            width: 100%;
+            border: none;
+            border-collapse: collapse;
+        }
+        .nav-table td {
+            border: none;
+            padding: 0;
+            vertical-align: middle;
+        }
+        .nav-table td:first-child {
+            text-align: left;
+        }
+        .nav-table td:last-child {
+            text-align: right;
+        }
+        /* Button styles */
+        #clear-filters, #export-csv {
+            padding: 4px 8px;
+            background-color: white;
+            color: #333;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 12px;
+            margin-left: 5px;
+        }
+        #clear-filters:hover, #export-csv:hover {
+            background-color: #f8f9fa;
+            border-color: #999;
+        }
+        /* New filter row style */
+        table.dataTable thead .filter-row th {
+            background-color: #C8C8C8 !important;
+            padding: 4px 8px !important;
+        }
+        table.dataTable thead .filter-row input {
+            width: 90%;
+            box-sizing: border-box;
+        }
+    </style>
+</head>
+<body>
+    <div class="path-nav">
+        <table class="nav-table">
+            <tr>
+                <td>
+                    Current Path: /
+                    {% if current_path %}
+                        <a href="/">root</a> /
+                        {% set path_parts = current_path.split('/') %}
+                        {% set clean_parts = [] %}
+                        {% for part in path_parts %}
+                            {% if part and part != '' %}
+                                {{ clean_parts.append(part) or '' }}
+                            {% endif %}
+                        {% endfor %}
+                        {% for i in range(clean_parts | length) %}
+                            {% set part = clean_parts[i] %}
+                            {% set path_segment = clean_parts[:i+1] | join('/') %}
+                            <a href="/browse/{{ path_segment }}">{{ part }}</a> /
+                        {% endfor %}
+                    {% else %}
+                        <a href="/">root</a> /
+                    {% endif %}
+                    {{ filename }}
+                </td>
+                <td>
+                    <button id="clear-filters">Clear All Filters</button>
+                    <button id="export-csv">Export Filtered CSV</button>
+                </td>
+            </tr>
+        </table>
+    </div>
+    
+    <table id="csv-table" class="display">
+        <thead>
+            <tr>
+                {% for header_cell in rows[0] %}
+                    <th>{{ header_cell }}</th>
+                {% endfor %}
+            </tr>
+            <tr class="filter-row">
+                {% for header_cell in rows[0] %}
+                    <th><input type="text" placeholder="Filter..." /></th>
+                {% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in rows[1:] %}
+            <tr>
+                {% for cell in row %}
+                    <td>{{ cell | safe }}</td>
+                {% endfor %}
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/fixedheader/3.4.0/js/dataTables.fixedHeader.min.js"></script>
+    <script>
+        $(document).ready(function() {
+            var table = $('#csv-table').DataTable({
+                pageLength: 50,
+                autoWidth: false,
+                fixedHeader: true,
+                orderCellsTop: true,  // Sorting only on first row (column headers)
+                initComplete: function () {
+                    // Once the table is fully loaded, hook up the filter inputs
+                    var api = this.api();
+                    // Apply the search for each column
+                    api.columns().eq(0).each(function (colIdx) {
+                        $('.filter-row th:eq(' + colIdx + ') input').on('keyup change', function () {
+                            if (api.column(colIdx).search() !== this.value) {
+                                api.column(colIdx).search(this.value).draw();
+                            }
+                        });
+                        // Prevent sort on filter row click
+                        $('.filter-row th:eq(' + colIdx + ') input').on('click', function (e) {
+                            e.stopPropagation();
+                        });
+                    });
+                }
+            });
+
+            // Clear all filters button
+            $('#clear-filters').on('click', function() {
+                $('.filter-row input').val('');
+                table.columns().search('').draw();
+            });
+
+            // Export CSV button
+            $('#export-csv').on('click', function() {
+                exportFilteredCSV();
+            });
+
+            function exportFilteredCSV() {
+                var csvContent = [];
+                
+                // Get headers (first row, excluding filter row)
+                var headers = [];
+                table.columns().every(function() {
+                    headers.push('"' + this.header().textContent.replace(/"/g, '""') + '"');
+                });
+                csvContent.push(headers.join(','));
+                
+                // Get all visible rows data (after filtering)
+                table.rows({search: 'applied'}).every(function() {
+                    var rowData = [];
+                    var data = this.data();
+                    for (var i = 0; i < data.length; i++) {
+                        // Clean HTML tags and escape quotes
+                        var cellValue = $('<div>').html(data[i]).text();
+                        cellValue = cellValue.replace(/"/g, '""');
+                        rowData.push('"' + cellValue + '"');
+                    }
+                    csvContent.push(rowData.join(','));
+                });
+                
+                // Create and download file
+                var csvString = csvContent.join('\n');
+                var blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+                var link = document.createElement('a');
+                var url = URL.createObjectURL(blob);
+                link.setAttribute('href', url);
+                
+                // Generate filename
+                var filename = '{{ filename }}';
+                var baseName = filename.replace(/\.[^/.]+$/, ''); // Remove extension
+                link.setAttribute('download', baseName + '_filtered.csv');
+                
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
+        });
+    </script>
+</body>
+</html>

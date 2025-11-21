@@ -1,0 +1,58 @@
+# azure-pipelines.yml
+trigger:
+  - main # Trigger pipeline on pushes to the main branch
+
+variables:
+  # Azure Container Registry details
+  ACR_SERVICE_CONNECTION: 'et-report-acr-connection-sp' # Name of the Service Connection to ACR (created in Azure DevOps)
+  AZURE_SUBSCRIPTION_SERVICE_CONNECTION: 'et-report-resourcegroup-connection' # Name of the Service Connection to Azure Subscription (created in Azure DevOps)
+  ACR_NAME: 'etreportacr' # Replace with your Azure Container Registry name
+  IMAGE_NAME: 'csv-viewer' # Name of your Docker image
+  APP_SERVICE_NAME: 'et-csv-viewer' # Replace with your Azure App Service name
+  AZURE_RESOURCE_GROUP: 'ET-Reports' # Replace with your Azure Resource Group name
+
+pool:
+  vmImage: 'ubuntu-latest' # Use a Microsoft-hosted agent
+
+stages:
+- stage: Build
+  displayName: Build and Push Docker Image
+  jobs:
+  - job: BuildAndPush
+    displayName: Build and Push to ACR
+    steps:
+    - task: Docker@2
+      displayName: Test ACR login
+      inputs:
+        containerRegistry: $(ACR_SERVICE_CONNECTION)
+        command: 'login'
+    - task: Docker@2
+      displayName: Build and push image to ACR
+      inputs:
+        containerRegistry: $(ACR_SERVICE_CONNECTION) # Use the service connection for ACR authentication
+        repository: $(IMAGE_NAME)
+        command: 'buildAndPush'
+        Dockerfile: 'Dockerfile'
+        tags: |
+          $(Build.BuildId)
+          latest
+
+- stage: Deploy
+  displayName: Deploy to Azure App Service
+  dependsOn: Build # This stage depends on the Build stage completing successfully
+  jobs:
+  - job: DeployToAppService
+    displayName: Deploy Container to App Service
+    steps:
+    - task: AzureWebAppContainer@1
+      displayName: 'Deploy Docker image to Azure App Service'
+      inputs:
+        azureSubscription: $(AZURE_SUBSCRIPTION_SERVICE_CONNECTION) # Use the service connection for your Azure subscription
+        appName: $(APP_SERVICE_NAME)
+        resourceGroupName: $(AZURE_RESOURCE_GROUP)
+        imageName: '$(ACR_NAME).azurecr.io/$(IMAGE_NAME):latest' # Full image path including 'latest' tag
+        # If you want to use the BuildId tag for specific deployments, change :latest to :$(Build.BuildId)
+        # You can also pass environment variables here if needed, but App Service Application Settings are preferred.
+        # appSettings: |
+        #   -AZURE_REDIRECT_URI https://csvviewer.yourcompany.com/auth/callback
+        #   -ENV production

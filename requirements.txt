@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+jinja2
+python-jose[cryptography]
+requests
+python-dotenv
+httpx
+azure-storage-blob
+azure-storage-blob
+azure-identity
+aiohttp

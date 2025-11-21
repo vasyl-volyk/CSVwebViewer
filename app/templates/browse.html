@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Browse CSV Files</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .header h1 { margin: 0; }
+        
+        /* Adjusted styling for table view */
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        tr:nth-child(even) { background-color: #f9f9f9; } /* Zebra striping */
+        
+        a { text-decoration: none; color: #007bff; }
+        a:hover { text-decoration: underline; }
+        .path-nav { margin-bottom: 15px; font-size: 1.1em; }
+        
+        /* Icons for folders and files using pseudo-elements */
+        .folder-icon::before { content: "📁 "; } /* Unicode folder emoji */
+        .file-icon::before { content: "📄 "; }   /* Unicode document emoji */
+        
+        /* Age-based color classes */
+        .age-today { color: green; }
+        .age-week { color: #ffa500; }
+        .age-old { color: red; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Browse CSV Files</h1>
+        <p>Logged in as: {{ user.preferred_username }} (<a href="/logout">Logout</a>)</p>
+    </div>
+
+    <div class="path-nav">
+        Current Path: /
+        {% if current_path %}
+            <a href="/">root</a> /
+            {% set path_parts = current_path.split('/') %}
+            {% for i in range(path_parts | length) %}
+                {% set part = path_parts[i] %}
+                {% set path_segment = path_parts[:i+1] | join('/') %}
+                <a href="/browse/{{ path_segment }}">{{ part }}</a> /
+            {% endfor %}
+        {% else %}
+            root
+        {% endif %}
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Last Modified</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% if parent_path is not none %}
+                <tr>
+                    <td><a href="/browse/{{ parent_path if parent_path else '/' }}"><span class="folder-icon"></span>.. (Parent Directory)</a></td>
+                    <td></td> {# No last modified for parent link #}
+                </tr>
+            {% endif %}
+
+            {% if entries %}
+                {% for entry in entries %}
+                    <tr>
+                        <td>
+                            {% if entry.is_dir %}
+                                <a href="/browse/{{ current_path }}/{{ entry.name | urlencode }}"><span class="folder-icon"></span>{{ entry.name }}</a>
+                            {% else %}
+                                <a href="/browse/{{ current_path }}/{{ entry.name | urlencode }}"><span class="file-icon"></span>{{ entry.name }}</a>
+                            {% endif %}
+                        </td>
+                        <td class="last-modified-cell">
+                            {% if not entry.is_dir %} {# Only show last modified for files #}
+                                <span data-modified="{{ entry.last_modified }}">{{ entry.last_modified }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+            {% else %}
+                <tr>
+                    <td colspan="2">No files or directories found.</td>
+                </tr>
+            {% endif %}
+        </tbody>
+    </table>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Get all last modified cells
+            const modifiedCells = document.querySelectorAll('.last-modified-cell span[data-modified]');
+            const now = new Date();
+            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            
+            modifiedCells.forEach(function(cell) {
+                const modifiedText = cell.getAttribute('data-modified');
+                if (!modifiedText) return;
+                
+                // Try to parse the date - this handles various common formats
+                let modifiedDate;
+                
+                // First try standard JavaScript Date parsing
+                modifiedDate = new Date(modifiedText);
+                
+                // If that fails, try some common formats
+                if (isNaN(modifiedDate.getTime())) {
+                    // Try parsing formats like "2024-01-15 10:30:45" or "2024/01/15 10:30:45"
+                    const dateMatch = modifiedText.match(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+                    if (dateMatch) {
+                        const year = parseInt(dateMatch[1]);
+                        const month = parseInt(dateMatch[2]) - 1; // JavaScript months are 0-based
+                        const day = parseInt(dateMatch[3]);
+                        modifiedDate = new Date(year, month, day);
+                    }
+                }
+                
+                // If we still can't parse it, skip this cell
+                if (isNaN(modifiedDate.getTime())) {
+                    console.warn('Could not parse date:', modifiedText);
+                    return;
+                }
+                
+                // Calculate the difference in days
+                const fileDate = new Date(modifiedDate.getFullYear(), modifiedDate.getMonth(), modifiedDate.getDate());
+                const timeDiff = today.getTime() - fileDate.getTime();
+                const daysDiff = Math.ceil(timeDiff / (1000 * 3600 * 24));
+                
+                // Apply color based on age
+                if (daysDiff === 0) {
+                    // Created today
+                    cell.className = 'age-today';
+                } else if (daysDiff >= 1 && daysDiff < 7) {
+                    // Older than 1 day but less than 7 days
+                    cell.className = 'age-week';
+                } else if (daysDiff >= 7) {
+                    // Older than 7 days
+                    cell.className = 'age-old';
+                }
+            });
+        });
+    </script>
+</body>
+</html>
